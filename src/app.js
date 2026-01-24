@@ -18,8 +18,22 @@ app.use(limiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Normalize CLIENT_URL by removing trailing slash
+const clientUrl = process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/$/, '') : '';
+
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' ? process.env.CLIENT_URL : '*',
+  origin: (origin, callback) => {
+    if (process.env.NODE_ENV === 'production') {
+      if (origin === clientUrl) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    } else {
+      // Allow all in development
+      callback(null, true);
+    }
+  },
   credentials: true,
 };
 app.use(cors(corsOptions));
