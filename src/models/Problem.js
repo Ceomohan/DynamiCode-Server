@@ -24,7 +24,12 @@ const problemSchema = mongoose.Schema(
       default: [],
     },
     difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], required: true, index: true },
-    topic: { type: String, required: true, index: true },
+    topic: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Topic',
+      required: true,
+      index: true,
+    },
   },
   { timestamps: true }
 );
