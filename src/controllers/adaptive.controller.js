@@ -81,7 +81,23 @@ const getNextRecommendation = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Get personalized recommendations for the dashboard
+ * @route   GET /api/adaptive/recommendations
+ * @access  Private
+ */
+const getRecommendations = async (req, res) => {
+  try {
+    const recommendations = await adaptiveEngineService.getRecommendations(req.user._id);
+    res.status(200).json(recommendations);
+  } catch (error) {
+    console.error('Error getting recommendations:', error);
+    res.status(500).json({ message: error.message || 'Failed to get recommendations' });
+  }
+};
+
 module.exports = {
   recordAttempt,
   getNextRecommendation,
+  getRecommendations,
 };

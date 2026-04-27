@@ -1,4 +1,7 @@
 const UserProgress = require('../models/UserProgress');
+const Topic = require('../models/Topic');
+const Problem = require('../models/Problem');
+const mongoose = require('mongoose');
 
 /**
  * Record a user's attempt at solving a problem
@@ -8,17 +11,19 @@ const UserProgress = require('../models/UserProgress');
  * @param {boolean} solved - Whether the problem was solved
  * @param {number} attempts - Number of attempts made
  * @param {number} timeTaken - Time taken in seconds
+ * @param {string} problemId - Problem ID
  * @returns {Promise<Object>} Created progress record
  */
-const recordAttempt = async (userId, topic, difficulty, solved, attempts, timeTaken) => {
+const recordAttempt = async (userId, topic, difficulty, solved, attempts, timeTaken, problemId) => {
   try {
     const progress = await UserProgress.create({
       userId,
       topic,
       difficulty,
       solved,
-      attempts,
+      attempts: Math.max(1, attempts), // Ensure at least 1 attempt
       timeTaken,
+      problemId
     });
 
     return progress;
@@ -132,19 +137,14 @@ const getNextTopic = async (userId) => {
     ]);
 
     if (topicStats.length === 0) {
-      // No history, return default topic
-      return 'Data Structures';
+      // No history, return first topic from DB
+      const firstTopic = await Topic.findOne();
+      return firstTopic ? firstTopic.name : 'Arrays & Hashing';
     }
 
-    // Find topics with low solve rate or haven't been attempted recently
-    const topics = [
-      'Data Structures',
-      'Algorithms',
-      'Dynamic Programming',
-      'Strings',
-      'Arrays',
-      'Recursion',
-    ];
+    // Get all available topics from DB
+    const allTopics = await Topic.find().select('name');
+    const topics = allTopics.map(t => t.name);
 
     // Check if there are topics not yet attempted
     const attemptedTopics = topicStats.map(stat => stat._id);
@@ -172,7 +172,80 @@ const getNextTopic = async (userId) => {
   } catch (error) {
     console.error('Error getting next topic:', error);
     // Default topic on error
-    return 'Data Structures';
+    return 'Arrays & Hashing';
+  }
+};
+
+/**
+ * Get personalized recommendations for a user
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} Recommendations object
+ */
+const getRecommendations = async (userId) => {
+  try {
+    const userIdObj = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+
+    // 1. Get next recommended topic and difficulty
+    const nextTopicName = await getNextTopic(userId);
+    const nextDifficulty = await getNextDifficulty(userId, nextTopicName);
+
+    // 2. Find a specific problem for the user
+    // Try to find a problem the user hasn't solved yet in that topic/difficulty
+    const solvedProblemIds = await UserProgress.find({ userId: userIdObj, solved: true }).distinct('problemId');
+    
+    const topic = await Topic.findOne({ name: nextTopicName });
+    let recommendedProblem = null;
+
+    if (topic) {
+      recommendedProblem = await Problem.findOne({
+        topic: topic._id,
+        difficulty: nextDifficulty,
+        _id: { $nin: solvedProblemIds }
+      });
+
+      // If no unsolved problems in that difficulty, try any unsolved problem in that topic
+      if (!recommendedProblem) {
+        recommendedProblem = await Problem.findOne({
+          topic: topic._id,
+          _id: { $nin: solvedProblemIds }
+        });
+      }
+    }
+
+    // 3. Identify weak topics (solve rate < 50%)
+    const topicStats = await UserProgress.aggregate([
+      { $match: { userId: userIdObj } },
+      {
+        $group: {
+          _id: '$topic',
+          totalAttempts: { $sum: 1 },
+          solvedCount: { $sum: { $cond: ['$solved', 1, 0] } }
+        }
+      }
+    ]);
+
+    const weakTopics = topicStats
+      .filter(stat => (stat.solvedCount / stat.totalAttempts) < 0.5)
+      .map(stat => stat._id);
+
+    // 4. Overall stats
+    const totalSolved = await UserProgress.countDocuments({ userId: userIdObj, solved: true });
+    const totalAttempts = await UserProgress.countDocuments({ userId: userIdObj });
+
+    return {
+      recommendedProblem,
+      recommendedTopic: topic,
+      recommendedDifficulty: nextDifficulty,
+      weakTopics,
+      stats: {
+        totalSolved,
+        totalAttempts,
+        accuracy: totalAttempts > 0 ? Math.round((totalSolved / totalAttempts) * 100) : 0
+      }
+    };
+  } catch (error) {
+    console.error('Error getting recommendations:', error);
+    throw error;
   }
 };
 
@@ -180,4 +253,5 @@ module.exports = {
   recordAttempt,
   getNextDifficulty,
   getNextTopic,
+  getRecommendations,
 };

@@ -28,6 +28,22 @@ const generateProblem = async (req, res) => {
   }
 };
 
+// @desc    Get a single problem by ID
+// @route   GET /api/problems/:id
+// @access  Private
+const getProblemById = async (req, res) => {
+  try {
+    const problem = await Problem.findById(req.params.id).populate('topic', 'name slug');
+    if (!problem) {
+      return res.status(404).json({ message: 'Problem not found' });
+    }
+    res.status(200).json(problem);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   generateProblem,
+  getProblemById
 };

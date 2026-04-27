@@ -8,8 +8,13 @@ const userProgressSchema = mongoose.Schema(
       required: [true, 'User ID is required'],
       index: true,
     },
+    problemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Problem',
+      index: true,
+    },
     topic: {
-      type: String,
+      type: String, // Or ObjectId if we want strict linking, keeping String for backward compat but will use ObjectId for new queries
       required: [true, 'Topic is required'],
       index: true,
     },

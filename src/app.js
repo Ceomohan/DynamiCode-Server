@@ -19,15 +19,26 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Normalize CLIENT_URL by removing trailing slash
-const clientUrl = process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/$/, '') : '';
+const allowedOrigins = (process.env.CLIENT_URL || '')
+  .split(',')
+  .map((url) => url.trim().replace(/\/$/, ''))
+  .filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
     if (process.env.NODE_ENV === 'production') {
-      if (origin === clientUrl) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.length === 0) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(new Error(`Not allowed by CORS: ${origin}`));
       }
     } else {
       // Allow all in development
@@ -58,6 +69,7 @@ app.use('/api/gamification', require('./routes/gamificationRoutes'));
 app.use('/api/leaderboard', require('./routes/leaderboardRoutes'));
 app.use('/api/social', require('./routes/socialRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/topics', require('./routes/topicRoutes'));
 
 // Basic route
 app.get('/', (req, res) => {
