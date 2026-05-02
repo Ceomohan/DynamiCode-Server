@@ -14,6 +14,13 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+// Tighter, dedicated limiter for the code execution endpoint
+const executionLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,             // 30 execution requests per minute per IP
+  message: { message: 'Too many execution requests. Please wait a moment and try again.' },
+});
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -62,7 +69,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/problems', require('./routes/problemRoutes'));
-app.use('/api/execute', require('./routes/executionRoutes'));
+app.use('/api/execute', executionLimiter, require('./routes/executionRoutes'));
 app.use('/api/solutions', require('./routes/solutionRoutes'));
 app.use('/api/adaptive', require('./routes/adaptiveRoutes'));
 app.use('/api/gamification', require('./routes/gamificationRoutes'));

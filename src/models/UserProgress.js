@@ -31,7 +31,7 @@ const userProgressSchema = mongoose.Schema(
     attempts: {
       type: Number,
       required: [true, 'Number of attempts is required'],
-      min: 2,
+      min: 1,
     },
     timeTaken: {
       type: Number, // Time in seconds

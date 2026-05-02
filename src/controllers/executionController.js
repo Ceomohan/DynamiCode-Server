@@ -21,6 +21,13 @@ const executeCode = async (req, res, next) => {
     res.json(result);
 
   } catch (error) {
+    if (error?.statusCode) {
+      const payload = { message: error.message || 'Failed to execute code' };
+      if (process.env.NODE_ENV !== 'production' && typeof error.details !== 'undefined') {
+        payload.details = error.details;
+      }
+      return res.status(error.statusCode).json(payload);
+    }
     next(error);
   }
 };
