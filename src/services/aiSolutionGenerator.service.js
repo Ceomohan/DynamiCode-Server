@@ -10,6 +10,9 @@ const getGroqClient = () => {
     }
     groqInstance = new Groq({
       apiKey: process.env.GROQ_API_KEY,
+      // Explicit timeout keeps the request well within Render's 30s limit.
+      // The Groq SDK default is no timeout, which causes silent kills on free-tier hosts.
+      timeout: 25000,
     });
   }
   return groqInstance;
@@ -55,7 +58,11 @@ const generateSolution = async (problem, language) => {
   try {
     const groq = getGroqClient();
     const settings = await AiSettings.findOne({}).sort({ updatedAt: -1 }).lean();
-    const model = settings?.model || 'llama-3.3-70b-versatile';
+
+    // Use the fast 8b-instant model as the default for solution generation.
+    // The 70b model takes 35-50s which exceeds Render free tier's 30s request timeout.
+    // Admin can override via AiSettings but the instant model is the safe production default.
+    const model = settings?.model || 'llama-3.1-8b-instant';
     const temperature = typeof settings?.temperature === 'number' ? settings.temperature : 0.5;
     // Enforce a minimum of 2048 tokens so solution code + explanation never gets cut off.
     // Admin-configured values below 2048 are overridden; the default is raised to 4096.
@@ -97,9 +104,12 @@ const generateSolution = async (problem, language) => {
     }
 
   } catch (error) {
+    // Reset the singleton so the next request gets a fresh Groq client.
+    // A stale/timed-out client instance is the most common cause of repeated
+    // failures after a Render cold start or mid-session instance recycle.
+    groqInstance = null;
+
     // Surface the real Groq error message instead of hiding it behind a generic one.
-    // This makes debugging much easier when the AI API returns rate limits,
-    // model errors, or other specific failures.
     console.error('AI Solution Generation Error:', error);
     if (error.message.includes('GROQ_API_KEY')) {
       throw error;

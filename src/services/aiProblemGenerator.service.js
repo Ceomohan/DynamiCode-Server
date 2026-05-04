@@ -10,6 +10,8 @@ const getGroqClient = () => {
     }
     groqInstance = new Groq({
       apiKey: process.env.GROQ_API_KEY,
+      // Explicit timeout keeps the request well within Render's 30s limit.
+      timeout: 25000,
     });
   }
   return groqInstance;
@@ -85,12 +87,13 @@ const generateCodingProblem = async (topic, difficulty) => {
     }
 
   } catch (error) {
+    // Reset singleton so the next request gets a fresh Groq client after any failure.
+    groqInstance = null;
     console.error('AI Generation Error:', error);
-    // Pass the specific error message if it's about the API key
     if (error.message.includes('GROQ_API_KEY')) {
       throw error;
     }
-    throw new Error('Failed to generate problem');
+    throw new Error(error.message || 'Failed to generate problem');
   }
 };
 
