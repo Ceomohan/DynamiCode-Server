@@ -74,7 +74,7 @@ const generateSolution = async (problem, language) => {
       messages: [
         {
           role: 'system',
-          content: 'You are an expert coding interview mentor. You always output valid JSON.',
+          content: 'You are an expert coding interview mentor. You always output valid JSON with no markdown formatting, no code fences, and no text outside the JSON object.',
         },
         {
           role: 'user',
@@ -84,22 +84,82 @@ const generateSolution = async (problem, language) => {
       model,
       temperature,
       max_tokens,
+      response_format: { type: 'json_object' },
     });
 
     const content = completion.choices[0]?.message?.content;
-    
-    // Attempt to parse JSON
+
+    if (!content || !content.trim()) {
+      throw new Error('Empty response received from AI model');
+    }
+
+    // Robust JSON extraction — handles all common LLM response patterns:
+    // 1. Clean JSON (ideal case)
+    // 2. Wrapped in markdown code fences: ```json ... ``` or ``` ... ```
+    // 3. JSON preceded/followed by explanatory text
+    // 4. solutionCode containing unescaped newlines (common with 8b-instant model)
     try {
-      // Find JSON substring if there's extra text
-      const jsonStart = content.indexOf('{');
-      const jsonEnd = content.lastIndexOf('}');
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        const jsonString = content.substring(jsonStart, jsonEnd + 1);
-        return JSON.parse(jsonString);
+      let jsonString = content.trim();
+
+      // Strip markdown code fences if present
+      const fenceMatch = jsonString.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch) {
+        jsonString = fenceMatch[1].trim();
+      } else {
+        // Fall back to extracting the outermost { ... } block
+        const jsonStart = jsonString.indexOf('{');
+        const jsonEnd = jsonString.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          jsonString = jsonString.substring(jsonStart, jsonEnd + 1);
+        }
       }
-      return JSON.parse(content);
+
+      // Attempt direct parse first
+      try {
+        return JSON.parse(jsonString);
+      } catch {
+        // If direct parse fails, the solutionCode field likely contains unescaped
+        // newlines or special characters. Use a regex to extract each field
+        // individually and reconstruct a safe object.
+        const extract = (key) => {
+          // Match "key": "value" where value may span multiple lines
+          const re = new RegExp(`"${key}"\\s*:\\s*"([\\s\\S]*?)"(?=\\s*,\\s*"|\\s*\\})`, '');
+          const m = jsonString.match(re);
+          return m ? m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : '';
+        };
+
+        const extractArray = (key) => {
+          const re = new RegExp(`"${key}"\\s*:\\s*\\[([\\s\\S]*?)\\]`, '');
+          const m = jsonString.match(re);
+          if (!m) return [];
+          try {
+            return JSON.parse(`[${m[1]}]`);
+          } catch {
+            // Split by quoted strings as fallback
+            return (m[1].match(/"([^"]*)"/g) || []).map(s => s.replace(/^"|"$/g, ''));
+          }
+        };
+
+        const result = {
+          solutionCode:       extract('solutionCode'),
+          timeComplexity:     extract('timeComplexity'),
+          spaceComplexity:    extract('spaceComplexity'),
+          alternativeApproach: extract('alternativeApproach'),
+          explanationSteps:   extractArray('explanationSteps'),
+        };
+
+        // Validate we got at least the code — if not, the response was truly unparseable
+        if (!result.solutionCode) {
+          console.error('Unparseable AI solution response content:', content);
+          throw new Error('Failed to parse generated solution');
+        }
+
+        return result;
+      }
     } catch (parseError) {
+      if (parseError.message === 'Failed to parse generated solution') throw parseError;
       console.error('Error parsing AI solution response:', parseError);
+      console.error('Raw content was:', content);
       throw new Error('Failed to parse generated solution');
     }
 
