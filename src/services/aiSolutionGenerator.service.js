@@ -16,14 +16,23 @@ const getGroqClient = () => {
 };
 
 const generateSolution = async (problem, language) => {
+  // Guard against missing fields — raw AI-generated problems may omit these
+  const constraints = Array.isArray(problem.constraints) && problem.constraints.length > 0
+    ? problem.constraints.join(', ')
+    : (typeof problem.constraints === 'string' && problem.constraints)
+      ? problem.constraints
+      : 'None specified';
+  const inputFormat  = problem.inputFormat  || 'See problem description';
+  const outputFormat = problem.outputFormat || 'See problem description';
+
   const prompt = `
     You are an expert coding mentor. I need you to provide a solution for the following coding problem.
     
     Problem Title: ${problem.title}
     Description: ${problem.description}
-    Constraints: ${JSON.stringify(problem.constraints)}
-    Input Format: ${problem.inputFormat}
-    Output Format: ${problem.outputFormat}
+    Constraints: ${constraints}
+    Input Format: ${inputFormat}
+    Output Format: ${outputFormat}
     
     Target Language: ${language}
 
@@ -48,7 +57,11 @@ const generateSolution = async (problem, language) => {
     const settings = await AiSettings.findOne({}).sort({ updatedAt: -1 }).lean();
     const model = settings?.model || 'llama-3.3-70b-versatile';
     const temperature = typeof settings?.temperature === 'number' ? settings.temperature : 0.5;
-    const max_tokens = typeof settings?.maxTokens === 'number' ? settings.maxTokens : 2048;
+    // Enforce a minimum of 2048 tokens so solution code + explanation never gets cut off.
+    // Admin-configured values below 2048 are overridden; the default is raised to 4096.
+    const max_tokens = typeof settings?.maxTokens === 'number'
+      ? Math.max(settings.maxTokens, 2048)
+      : 4096;
     
     const completion = await groq.chat.completions.create({
       messages: [
@@ -84,11 +97,14 @@ const generateSolution = async (problem, language) => {
     }
 
   } catch (error) {
+    // Surface the real Groq error message instead of hiding it behind a generic one.
+    // This makes debugging much easier when the AI API returns rate limits,
+    // model errors, or other specific failures.
     console.error('AI Solution Generation Error:', error);
     if (error.message.includes('GROQ_API_KEY')) {
       throw error;
     }
-    throw new Error('Failed to generate solution');
+    throw new Error(error.message || 'Failed to generate solution');
   }
 };
 

@@ -54,9 +54,11 @@ const corsOptions = {
   },
   credentials: true,
 };
-app.use(cors(corsOptions));
 
 app.use(helmet());
+app.use(cors(corsOptions));
+
+
 
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
